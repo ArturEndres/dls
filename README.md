@@ -136,4 +136,4 @@ O teste cobre o parsing das flags, a lista de arquivos e a calibração da grade
 
 ## Licença
 
-Defina antes de publicar, por exemplo [MIT](https://choosealicense.com/licenses/mit/).
+[MIT](LICENSE) © 2026 Artur Endres
