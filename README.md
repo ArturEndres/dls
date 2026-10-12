@@ -1,29 +1,29 @@
 <div align="center">
 
-**Português (Brasil)** · [English](README.en.md)
+[Português (Brasil)](README.md) · **English**
 
 <h1>dls</h1>
 
-<h3>O <code>ls</code> que você pode arrastar.</h3>
+<h3>The <code>ls</code> you can drag.</h3>
 
-<p>Liste arquivos como sempre e arraste-os <b>direto do terminal</b> para o navegador,<br>o gerenciador de arquivos, o WhatsApp Web ou qualquer app que aceite arquivos.</p>
+<p>List files as usual and drag them <b>straight out of the terminal</b> into your browser,<br>file manager, WhatsApp Web or any app that accepts files.</p>
 
 <p>
-<a href="LICENSE"><img alt="licença MIT" src="https://img.shields.io/badge/licen%C3%A7a-MIT-yellow"></a>
+<a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-yellow"></a>
 <img alt="Python 3.8+" src="https://img.shields.io/badge/python-3.8%2B-3776AB?logo=python&logoColor=white">
 <img alt="Linux X11" src="https://img.shields.io/badge/linux-X11-FCC624?logo=linux&logoColor=black">
 <img alt="GNOME" src="https://img.shields.io/badge/GNOME-GTK%203-4A86CF?logo=gnome&logoColor=white">
-<img alt="sem dependências" src="https://img.shields.io/badge/depend%C3%AAncias-zero-brightgreen">
-<a href="https://github.com/ArturEndres/dls/stargazers"><img alt="estrelas" src="https://img.shields.io/github/stars/ArturEndres/dls?style=flat&logo=github"></a>
+<img alt="zero dependencies" src="https://img.shields.io/badge/dependencies-zero-brightgreen">
+<a href="https://github.com/ArturEndres/dls/stargazers"><img alt="stars" src="https://img.shields.io/github/stars/ArturEndres/dls?style=flat&logo=github"></a>
 </p>
 
-<img src="assets/arrastar.gif" alt="Arrastando um arquivo do terminal para uma página de upload" width="100%">
+<img src="assets/arrastar.gif" alt="Dragging a file from the terminal into an upload page" width="100%">
 
 <p>
-<a href="#instalação"><b>Instalação</b></a> ·
-<a href="#uso"><b>Uso</b></a> ·
-<a href="#como-funciona"><b>Como funciona</b></a> ·
-<a href="#limitações"><b>Limitações</b></a>
+<a href="#installation"><b>Installation</b></a> ·
+<a href="#usage"><b>Usage</b></a> ·
+<a href="#how-it-works"><b>How it works</b></a> ·
+<a href="#limitations"><b>Limitations</b></a>
 </p>
 
 <pre>git clone https://github.com/ArturEndres/dls.git && ln -s "$PWD/dls/dls" ~/.local/bin/dls</pre>
@@ -32,33 +32,33 @@
 
 ---
 
-## Por que existe
+## Why
 
-Terminais não deixam arrastar arquivos *para fora*. Para mandar um arquivo pelo navegador, quem está no terminal precisa abrir o gerenciador de arquivos, navegar até a mesma pasta e só então arrastar. O `dls` elimina esse caminho: o arquivo que você está vendo no terminal pode ser arrastado dali mesmo.
+Terminals don't let you drag files *out*. To send a file through the browser, someone working in the terminal has to open the file manager, navigate to the same folder and only then drag it. `dls` removes that detour: the file you're looking at in the terminal can be dragged right from there.
 
-## Recursos
+## Features
 
-- **Arraste nativo** (XDND): funciona com qualquer app que aceite arquivos soltos.
-- **Seleção múltipla**: arraste sobre os nomes (como selecionar texto), use Shift+clique para um intervalo ou Ctrl+clique para alternar.
-- **Indicadores visuais**: a linha sob o mouse fica destacada (translúcida com compositor, sólida sem ele, como nas demos), o cursor vira mão, a seleção aparece em vídeo invertido e o ícone do arraste mostra quantos arquivos vão junto.
-- **Abrir**: duplo clique abre com o app padrão. O clique direito mostra um menu *abrir com…* com os apps instalados para aquele tipo de arquivo.
-- **Mantém o formato do `ls`**: cores, `-l`, `-h`, `-a` e as demais flags de exibição.
-- **Leve**: um único arquivo Python, sem dependências para instalar num GNOME padrão. A lista aparece em ~30 ms e a interação fica pronta em ~150 ms.
-- **Não deixa o terminal quebrado**: ao sair com `q`, ao fechar a aba ou ao receber `kill`, o terminal volta ao normal.
+- **Native drag** (XDND): works with any app that accepts dropped files.
+- **Multi-select**: drag over the names (like selecting text), Shift+click for a range, Ctrl+click to toggle.
+- **Visual cues**: the row under the mouse is highlighted (translucent with a compositor, solid without one, as in the demos), the cursor turns into a hand, the selection is shown in reverse video and the drag icon shows how many files are coming along.
+- **Open**: double-click opens with the default app. Right-click shows an *open with…* menu listing the apps installed for that file type.
+- **Keeps the `ls` look**: colors, `-l`, `-h`, `-a` and the other display flags.
+- **Lightweight**: a single Python file, nothing to install on a standard GNOME desktop. The listing shows up in ~30 ms and interaction is ready in ~150 ms.
+- **Never leaves the terminal broken**: quitting with `q`, closing the tab or receiving `kill` all restore the terminal.
 
-## Requisitos
+## Requirements
 
-**Funciona de cara:** Ubuntu e derivados com GNOME (Zorin, Pop!_OS…) numa sessão X11, usando o gnome-terminal.
-**Não funciona:** sessão Wayland (padrão do Ubuntu 22.04+) e terminais que não usam a fonte do perfil do gnome-terminal (Konsole, xfce4-terminal, Ptyxis com fonte própria). Nesses casos o `dls` não quebra, só fica desalinhado ou vira `ls`.
+**Works out of the box:** Ubuntu and GNOME-based derivatives (Zorin, Pop!_OS…) on an X11 session, using gnome-terminal.
+**Doesn't work:** Wayland sessions (the Ubuntu 22.04+ default) and terminals that don't use the gnome-terminal profile font (Konsole, xfce4-terminal, Ptyxis with its own font). In those cases `dls` doesn't break: it's just misaligned or falls back to `ls`.
 
 | | |
 |---|---|
-| Sessão | **X11** (no Ubuntu 22.04+ o padrão é Wayland: escolha *Ubuntu on Xorg* na tela de login) |
-| Terminal | **gnome-terminal** (ou outro baseado em VTE que use a fonte do perfil do gnome-terminal) |
+| Session | **X11** (Ubuntu 22.04+ defaults to Wayland: pick *Ubuntu on Xorg* on the login screen) |
+| Terminal | **gnome-terminal** (or another VTE-based terminal using the gnome-terminal profile font) |
 | Python | 3.8+ |
-| Bibliotecas | PyGObject, pycairo, GTK 3 |
+| Libraries | PyGObject, pycairo, GTK 3 |
 
-Ubuntu, Zorin, Pop!_OS, Fedora Workstation e outras distros com GNOME já trazem tudo isso. Se faltar algo:
+Ubuntu, Zorin, Pop!_OS, Fedora Workstation and other GNOME distros ship all of this already. If something is missing:
 
 ```bash
 # Debian / Ubuntu
@@ -68,7 +68,7 @@ sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0
 sudo dnf install python3-gobject python3-cairo gtk3
 ```
 
-## Instalação
+## Installation
 
 ```bash
 git clone https://github.com/ArturEndres/dls.git
@@ -76,88 +76,87 @@ cd dls
 ln -s "$PWD/dls" ~/.local/bin/dls
 ```
 
-`~/.local/bin` precisa estar no seu `PATH` (no Ubuntu e derivados já está). Para conferir:
+`~/.local/bin` must be on your `PATH` (it already is on Ubuntu and derivatives). To check:
 
 ```bash
 command -v dls
 ```
 
-Para desinstalar, basta `rm ~/.local/bin/dls`.
+To uninstall, just `rm ~/.local/bin/dls`.
 
-## Uso
+## Usage
 
 ```bash
-dls                  # pasta atual
-dls -lh ~/Downloads  # aceita as flags do ls
-dls *.pdf            # só os arquivos que casam com o padrão
-dls -a               # inclui ocultos
+dls                  # current folder
+dls -lh ~/Downloads  # accepts ls flags
+dls *.pdf            # only files matching the pattern
+dls -a               # include hidden files
 ```
 
-O `dls` imprime a lista e fica esperando o mouse. Ao sair, a lista continua no terminal.
+`dls` prints the listing and waits for the mouse. When you quit, the listing stays in the terminal.
 
 ### Mouse
 
-![Selecionando vários arquivos arrastando sobre os nomes e com Ctrl+clique, depois enviando todos de uma vez](assets/selecao-multipla.gif)
+![Selecting several files by dragging over the names and with Ctrl+click, then sending them all at once](assets/selecao-multipla.gif)
 
-
-| Ação | Resultado |
+| Action | Result |
 |---|---|
-| Passar o mouse sobre um nome | destaca a linha; o cursor vira mão |
-| Segurar sobre um nome e mover **para o lado** | arrasta esse arquivo |
-| Segurar e mover **para cima/baixo** | seleciona as linhas percorridas (o primeiro movimento decide entre arrastar e selecionar) |
-| …e então sair da coluna dos nomes para o lado | arrasta todos os selecionados |
-| Clique | seleciona só aquele arquivo |
-| Shift + clique | seleciona o intervalo desde o último clique |
-| Ctrl + clique | adiciona ou remove da seleção |
-| Arrastar uma linha já selecionada | arrasta toda a seleção |
-| Duplo clique | abre com o app padrão |
-| Clique direito | menu *abrir com…* |
+| Hover over a name | highlights the row; the cursor turns into a hand |
+| Press on a name and move **sideways** | drags that file |
+| Press and move **up/down** | selects the rows you pass over (the first movement decides between dragging and selecting) |
+| …then leave the names column sideways | drags everything selected |
+| Click | selects just that file |
+| Shift + click | selects the range from the last click |
+| Ctrl + click | adds to or removes from the selection |
+| Drag a row that's already selected | drags the whole selection |
+| Double-click | opens with the default app |
+| Right-click | *open with…* menu |
 
-### Teclado
+### Keyboard
 
-| Tecla | Resultado |
+| Key | Result |
 |---|---|
-| `a` | seleciona todos |
-| `Esc` | limpa a seleção (com nada selecionado, sai) |
-| `q` / `Ctrl+C` | sai |
+| `a` | select all |
+| `Esc` | clear the selection (with nothing selected, quit) |
+| `q` / `Ctrl+C` | quit |
 
-### Fora de um terminal interativo
+### Outside an interactive terminal
 
-Com a saída redirecionada (`dls | grep x`) ou sem display gráfico (SSH, TTY), o `dls` se comporta exatamente como `ls`. Erros do `ls` (por exemplo, um caminho inexistente) são exibidos e o código de saída é preservado.
+With output redirected (`dls | grep x`) or without a graphical display (SSH, TTY), `dls` behaves exactly like `ls`. `ls` errors (a missing path, for example) are shown and the exit code is preserved.
 
-## Como funciona
+## How it works
 
-Nenhum programa rodando *dentro* de um terminal consegue iniciar um arraste: enquanto o botão está pressionado, o X11 entrega o ponteiro à janela do terminal. O `dls` contorna isso assim:
+No program running *inside* a terminal can start a drag: while the button is held, X11 hands the pointer to the terminal window. `dls` works around this:
 
-1. **Mouse tracking.** O `dls` liga o modo de rastreamento de mouse do terminal (`?1003` + `?1006`). A partir daí, o terminal informa em qual célula (linha, coluna) o mouse está.
-2. **Calibração.** O tamanho da célula vem da fonte do seu perfil do gnome-terminal, medida pela Pango do mesmo jeito que a VTE (o motor do gnome-terminal) mede. A posição da grade na tela é deduzida cruzando cada evento do terminal com a posição real do ponteiro. Cada evento restringe a origem a um intervalo, e a interseção converge para o pixel exato em poucos movimentos.
-3. **Janela transparente.** Uma janela sem bordas e semitransparente é posicionada exatamente sobre a linha sob o mouse. É ela, e não o terminal, que recebe o clique, então o arraste é um arraste GTK/XDND nativo.
-4. **Seleção.** Fica guardada no `dls` e é desenhada no próprio terminal com sequências ANSI (vídeo invertido).
+1. **Mouse tracking.** `dls` turns on the terminal's mouse tracking mode (`?1003` + `?1006`). From then on, the terminal reports which cell (row, column) the mouse is in.
+2. **Calibration.** The cell size comes from your gnome-terminal profile font, measured with Pango the same way VTE (gnome-terminal's engine) measures it. The grid's position on screen is deduced by matching each terminal event with the real pointer position. Each event narrows the origin down to an interval, and the intersection converges to the exact pixel within a few movements.
+3. **Transparent window.** A borderless, semi-transparent window is placed exactly over the row under the mouse. It, not the terminal, receives the click, so the drag is a native GTK/XDND drag.
+4. **Selection.** Kept inside `dls` and drawn in the terminal itself with ANSI sequences (reverse video).
 
-## Limitações
+## Limitations
 
-- **Só X11.** No Wayland, uma janela não pode se posicionar em coordenadas absolutas nem consultar a posição global do ponteiro. Numa sessão Wayland o `dls` avisa e funciona como `ls`.
-- **Zoom do terminal** (`Ctrl +` / `Ctrl -`) ou um perfil diferente do padrão desalinham o destaque, porque a medida vem da fonte do perfil padrão.
-- **Ordenação:** a lista sai sempre em ordem alfabética. Flags como `-t` e `-S` são ignoradas.
-- **Listas maiores que a tela:** só as linhas visíveis respondem ao mouse. Prefira filtrar (`dls *.pdf`).
-- **Nomes com caracteres largos** (CJK, emoji) podem deixar o destaque um pouco mais estreito que a linha.
-- **Flags com argumento separado** (`-I padrão`, `-w 80`) são repassadas ao `ls`, mas o argumento não entra na lista de arrastáveis. Já os arquivos ocultados por `-I` ainda aparecem para arrastar.
-- **Se o terminal ficar imprimindo números ao clicar** (só acontece se o `dls` for morto com `kill -9`), restaure com `reset` ou com:
+- **X11 only.** On Wayland, a window can't place itself at absolute coordinates or read the global pointer position. On a Wayland session `dls` warns and behaves like `ls`.
+- **Terminal zoom** (`Ctrl +` / `Ctrl -`) or a non-default profile misaligns the highlight, since the measurement comes from the default profile font.
+- **Sorting:** the listing is always alphabetical. Flags like `-t` and `-S` are ignored.
+- **Lists taller than the screen:** only visible rows respond to the mouse. Filter instead (`dls *.pdf`).
+- **Names with wide characters** (CJK, emoji) may make the highlight a bit narrower than the row.
+- **Flags with a separate argument** (`-I pattern`, `-w 80`) are passed to `ls`, but the argument isn't treated as a draggable file. Files hidden by `-I` still show up as draggable.
+- **If the terminal starts printing numbers when you click** (only happens if `dls` is killed with `kill -9`), restore it with `reset` or with:
 
   ```bash
   printf '\e[?1003l\e[?1006l\e[?7h'
   ```
 
-## Desenvolvimento
+## Development
 
-O projeto é um único arquivo executável (`dls`) mais uma verificação automática:
+The project is a single executable file (`dls`) plus an automated check:
 
 ```bash
-python3 test_dls.py   # imprime "ok"
+python3 test_dls.py   # prints "ok"
 ```
 
-O teste cobre o parsing das flags, a lista de arquivos, a calibração da grade e a linha de ajuda. A parte gráfica foi validada num servidor X aninhado (Xephyr) com um terminal VTE real e mouse simulado via XTest.
+The test covers flag parsing, the file list, grid calibration and the help line. The graphical part was validated in a nested X server (Xephyr) with a real VTE terminal and a mouse simulated through XTest.
 
-## Licença
+## License
 
 [MIT](LICENSE) © 2026 Artur Endres
