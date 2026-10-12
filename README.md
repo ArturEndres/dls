@@ -1,10 +1,34 @@
-# dls
+<div align="center">
 
-**`ls` com drag and drop direto do terminal.**
+**Português (Brasil)** · [English](README.en.md)
 
-Liste os arquivos como sempre e arraste-os do próprio terminal para o Nautilus, o navegador, o WhatsApp Web, um e-mail ou qualquer app que aceite arquivos. Nenhuma janela extra se abre.
+<h1>dls</h1>
 
-![Arrastando um arquivo do terminal para uma página de upload](assets/arrastar.gif)
+<h3>O <code>ls</code> que você pode arrastar.</h3>
+
+<p>Liste arquivos como sempre e arraste-os <b>direto do terminal</b> para o navegador,<br>o gerenciador de arquivos, o WhatsApp Web ou qualquer app que aceite arquivos.</p>
+
+<p>
+<a href="LICENSE"><img alt="licença MIT" src="https://img.shields.io/badge/licen%C3%A7a-MIT-yellow"></a>
+<img alt="Python 3.8+" src="https://img.shields.io/badge/python-3.8%2B-3776AB?logo=python&logoColor=white">
+<img alt="Linux X11" src="https://img.shields.io/badge/linux-X11-FCC624?logo=linux&logoColor=black">
+<img alt="GNOME" src="https://img.shields.io/badge/GNOME-GTK%203-4A86CF?logo=gnome&logoColor=white">
+<img alt="sem dependências" src="https://img.shields.io/badge/depend%C3%AAncias-zero-brightgreen">
+<a href="https://github.com/ArturEndres/dls/stargazers"><img alt="estrelas" src="https://img.shields.io/github/stars/ArturEndres/dls?style=flat&logo=github"></a>
+</p>
+
+<img src="assets/arrastar.gif" alt="Arrastando um arquivo do terminal para uma página de upload" width="100%">
+
+<p>
+<a href="#instalação"><b>Instalação</b></a> ·
+<a href="#uso"><b>Uso</b></a> ·
+<a href="#como-funciona"><b>Como funciona</b></a> ·
+<a href="#limitações"><b>Limitações</b></a>
+</p>
+
+<pre>git clone https://github.com/ArturEndres/dls.git && ln -s "$PWD/dls/dls" ~/.local/bin/dls</pre>
+
+</div>
 
 ---
 
@@ -132,7 +156,7 @@ O projeto é um único arquivo executável (`dls`) mais uma verificação autom�
 python3 test_dls.py   # imprime "ok"
 ```
 
-O teste cobre o parsing das flags, a lista de arquivos e a calibração da grade. A parte gráfica foi validada num servidor X aninhado (Xephyr) com um terminal VTE real e mouse simulado via XTest.
+O teste cobre o parsing das flags, a lista de arquivos, a calibração da grade e a linha de ajuda. A parte gráfica foi validada num servidor X aninhado (Xephyr) com um terminal VTE real e mouse simulado via XTest.
 
 ## Licença
 
