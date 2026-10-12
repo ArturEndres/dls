@@ -30,7 +30,17 @@ import sys
 import termios
 import tty
 
-HINT = "\x1b[2m  arraste nomes p/ selecionar, pro lado p/ enviar · shift/ctrl · 2× abre · q sai\x1b[0m"
+# (gesto, acao, prioridade): em terminal estreito saem primeiro as de numero maior
+HINTS = [("arraste pro lado", "envia", 0), ("arraste pra baixo", "seleciona", 1),
+         ("ctrl/shift+clique", "vários", 4), ("2 cliques", "abre", 3), ("q", "sai", 2)]
+
+
+def hint(cols):
+    """Linha de ajuda sob a lista: gesto em negrito, acao apagada."""
+    parts = list(HINTS)
+    while len("   ".join(f"{g}: {a}" for g, a, _ in parts)) + 2 > cols and len(parts) > 1:
+        parts.remove(max(parts, key=lambda h: h[2]))
+    return "  " + "   ".join(f"\x1b[1m{g}\x1b[0;2m: {a}\x1b[0m" for g, a, _ in parts)
 MOUSE = rb"\x1b\[<(\d+);(\d+);(\d+)([Mm])"
 ANSI = re.compile(r"\x1b\[[\d;]*m")
 
@@ -430,13 +440,16 @@ def main():
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
     os.write(1, b"\x1b[?7l")  # sem quebra de linha: 1 arquivo = 1 linha de tela
-    os.write(1, ("\n".join(lines) + "\n" + HINT).encode())
+    os.write(1, ("\n".join(lines) + "\n" + hint(os.get_terminal_size(fd).columns)).encode())
     try:
         tty.setraw(fd)
         run(files, lines, fd)
     finally:
-        os.write(1, b"\x1b[?1003l\x1b[?1006l\x1b[?7h\r\x1b[2K")  # apaga a dica
-        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        try:
+            os.write(1, b"\x1b[?1003l\x1b[?1006l\x1b[?7h\r\x1b[2K")  # apaga a dica
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        except OSError:
+            pass  # aba fechada: nao ha mais terminal para restaurar
     return 0
 
 

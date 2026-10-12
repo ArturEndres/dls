@@ -29,4 +29,9 @@ for cell, p in [(3, 140), (4, 154), (3, 153), (5, 172)]:
 assert a.start(1) == 100 and a.cell(135) == 2, (a.lo, a.hi)
 a.feed(1, 500)  # janela moveu: recomeca sem quebrar
 assert a.lo <= 500 <= a.hi
+# dica cabe na largura e mantem o essencial
+plain = lambda h: dls.ANSI.sub("", h)
+assert "ctrl/shift" in plain(dls.hint(200))
+assert len(plain(dls.hint(80))) <= 80 and "envia" in plain(dls.hint(80))
+assert "envia" in plain(dls.hint(10))
 print("ok")
