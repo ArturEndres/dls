@@ -4,14 +4,7 @@
 
 Liste os arquivos como sempre e arraste-os do próprio terminal para o Nautilus, o navegador, o WhatsApp Web, um e-mail ou qualquer app que aceite arquivos. Nenhuma janela extra se abre.
 
-```
-$ dls ~/Downloads
-fatura-outubro.pdf
-foto-praia.jpg          ← passe o mouse: a linha destaca e o cursor vira mão
-relatorio.docx          ← arraste sobre os nomes para selecionar vários
-video.mp4
-  arraste nomes p/ selecionar, pro lado p/ enviar · shift/ctrl · 2× abre · q sai
-```
+![Arrastando um arquivo do terminal para uma página de upload](assets/arrastar.gif)
 
 ---
 
@@ -23,7 +16,7 @@ Terminais não deixam arrastar arquivos *para fora*. Para mandar um arquivo pelo
 
 - **Arraste nativo** (XDND): funciona com qualquer app que aceite arquivos soltos.
 - **Seleção múltipla**: arraste sobre os nomes (como selecionar texto), use Shift+clique para um intervalo ou Ctrl+clique para alternar.
-- **Indicadores visuais**: a linha sob o mouse fica destacada, o cursor vira mão, a seleção aparece em vídeo invertido e o ícone do arraste mostra quantos arquivos vão junto.
+- **Indicadores visuais**: a linha sob o mouse fica destacada (translúcida com compositor, sólida sem ele, como nas demos), o cursor vira mão, a seleção aparece em vídeo invertido e o ícone do arraste mostra quantos arquivos vão junto.
 - **Abrir**: duplo clique abre com o app padrão. O clique direito mostra um menu *abrir com…* com os apps instalados para aquele tipo de arquivo.
 - **Mantém o formato do `ls`**: cores, `-l`, `-h`, `-a` e as demais flags de exibição.
 - **Leve**: um único arquivo Python, sem dependências para instalar num GNOME padrão. A lista aparece em ~30 ms e a interação fica pronta em ~150 ms.
@@ -80,12 +73,15 @@ O `dls` imprime a lista e fica esperando o mouse. Ao sair, a lista continua no t
 
 ### Mouse
 
+![Selecionando vários arquivos arrastando sobre os nomes e com Ctrl+clique, depois enviando todos de uma vez](assets/selecao-multipla.gif)
+
+
 | Ação | Resultado |
 |---|---|
 | Passar o mouse sobre um nome | destaca a linha; o cursor vira mão |
-| Segurar sobre um nome e sair **para o lado** | arrasta esse arquivo |
-| Segurar e mover **para cima/baixo** sobre os nomes | seleciona as linhas percorridas |
-| …e então sair para o lado | arrasta todos os selecionados |
+| Segurar sobre um nome e mover **para o lado** | arrasta esse arquivo |
+| Segurar e mover **para cima/baixo** | seleciona as linhas percorridas (o primeiro movimento decide entre arrastar e selecionar) |
+| …e então sair da coluna dos nomes para o lado | arrasta todos os selecionados |
 | Clique | seleciona só aquele arquivo |
 | Shift + clique | seleciona o intervalo desde o último clique |
 | Ctrl + clique | adiciona ou remove da seleção |

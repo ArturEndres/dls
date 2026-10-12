@@ -137,9 +137,9 @@ def cell_size():
     # desalinha. Ler o perfil da aba atual se precisar.
     # a VTE mede a celula pelo retangulo logico de um caractere: o mesmo da Pango
     layout = Gtk.Label().create_pango_layout("M")
-    layout.set_font_description(Pango.FontDescription.from_string(font))
+    layout.set_font_description(Pango.FontDescription.from_string(font or "Monospace 11"))
     rect = layout.get_pixel_extents()[1]
-    return round(rect.width * sw), round(rect.height * sh)
+    return round(rect.width * sw), round(rect.height * sh), layout.get_font_description()
 
 
 def cursor_row(fd):
@@ -154,9 +154,10 @@ def run(files, lines, fd):
     import gi
     gi.require_version("Gtk", "3.0")
     gi.require_version("Gdk", "3.0")
-    from gi.repository import Gdk, Gio, GLib, Gtk
+    gi.require_version("PangoCairo", "1.0")
+    from gi.repository import Gdk, Gio, GLib, Gtk, PangoCairo
 
-    cw, ch = cell_size()
+    cw, ch, font = cell_size()
     ax, ay = Axis(cw), Axis(ch)
     gfiles = [Gio.File.new_for_path(f) for f in files]
     # todas as linhas com a largura da maior: nome curto nao vira alvo minusculo
@@ -200,7 +201,20 @@ def run(files, lines, fd):
     win.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK
                    | Gdk.EventMask.BUTTON_MOTION_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
 
+    composited = win.get_screen().is_composited()
+    plain = [ANSI.sub("", l) for l in lines]
+
     def draw(w, cr):
+        if not composited:
+            # sem compositor nao ha transparencia: desenha a propria linha
+            # sobre fundo solido, como uma selecao
+            cr.set_source_rgb(0.16, 0.32, 0.62)
+            cr.paint()
+            layout = w.create_pango_layout(plain[st["i"]] if st["i"] is not None else "")
+            layout.set_font_description(font)
+            cr.set_source_rgb(1, 1, 1)
+            PangoCairo.show_layout(cr, layout)
+            return
         cr.set_source_rgba(0.35, 0.6, 1.0, 0.28)
         cr.paint()
         cr.set_source_rgba(0.35, 0.6, 1.0, 0.9)
@@ -224,6 +238,7 @@ def run(files, lines, fd):
         win.move(ax.start(1), ay.start(top + i))
         win.resize(width * cw, ch)
         win.show()
+        win.queue_draw()
 
     def rehover():
         if ay.lo is not None:
@@ -315,9 +330,19 @@ def run(files, lines, fd):
         p = st["press"]
         if not p or not p["mode"]:
             return True
+        moved = w.drag_check_threshold(int(p["x"]), int(p["y"]), int(e.x_root), int(e.y_root))
+        if p["mode"] == "band" and moved and not p.get("vertical"):
+            # 1o movimento decide: mais pro lado = arrastar so esta linha,
+            # mais pra cima/baixo = selecionar como texto
+            if abs(e.x_root - p["x"]) > abs(e.y_root - p["y"]):
+                p["mode"] = "drag"
+            else:
+                p["vertical"] = True
         if p["mode"] == "drag":
-            if w.drag_check_threshold(int(p["x"]), int(p["y"]), int(e.x_root), int(e.y_root)):
+            if moved:
                 begin_drag(e)
+        elif not p.get("vertical"):
+            pass  # ainda dentro do limiar
         elif not ax.start(1) <= e.x_root < ax.start(1) + width * cw:
             begin_drag(e)  # saiu da coluna dos nomes pro lado: vira arraste
         else:
