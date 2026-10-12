@@ -12,7 +12,11 @@ Passe o mouse sobre um arquivo da lista: a linha destaca e o cursor vira mao.
   a                        -> seleciona todos; Esc limpa a selecao
   duplo clique             -> abre com o app padrao
   clique direito           -> menu "abrir com..."
-  q / Esc / Ctrl+C         -> sai (a listagem fica no terminal)
+  roda / setas / PgUp PgDn -> rola a lista (Home/End: inicio/fim)
+  q / Esc / Ctrl+C         -> sai (a lista fica no terminal, como no ls)
+
+Enquanto aberto ocupa o terminal todo (como o less): assim o terminal nunca
+rola a lista por conta propria e o destaque nunca fica sobre o arquivo errado.
 
 Como funciona: o terminal informa em qual linha esta o mouse (mouse tracking);
 uma janela transparente e colocada exatamente sobre essa linha e e ela que
@@ -22,17 +26,28 @@ Sem dependencias extras: python3 + GTK3 (ja presentes no GNOME).
 Requer X11 e gnome-terminal (tamanho da celula vem da fonte do perfil).
 """
 import itertools
+import locale
 import os
 import re
+import select
 import signal
 import subprocess
 import sys
 import termios
 import tty
+import unicodedata
 
 # (gesto, acao, prioridade): em terminal estreito saem primeiro as de numero maior
 HINTS = [("arraste pro lado", "envia", 0), ("arraste pra baixo", "seleciona", 1),
          ("ctrl/shift+clique", "vários", 4), ("2 cliques", "abre", 3), ("q", "sai", 2)]
+MISALIGNED = ("  \x1b[33mdestaque desalinhado: volte o zoom do terminal (Ctrl+0)"
+              " ou use o perfil padrão\x1b[0m")
+MOUSE = re.compile(rb"\x1b\[<(\d+);(\d+);(\d+)([Mm])")
+PARTIAL = re.compile(rb"\x1b(\[(<[\d;]*)?)?\Z")  # inicio de sequencia de mouse no fim
+# setas, Home/End e PgUp/PgDn, com ou sem modificador (na tela cheia ate o
+# Shift+PgUp vem pro dls em vez de rolar o terminal)
+NAV = re.compile(rb"\x1b\[(?:1;\d+)?([ABHF])|\x1b\[([56])(?:;\d+)?~")
+ANSI = re.compile(r"\x1b\[[\d;]*m")
 
 
 def hint(cols):
@@ -41,8 +56,13 @@ def hint(cols):
     while len("   ".join(f"{g}: {a}" for g, a, _ in parts)) + 2 > cols and len(parts) > 1:
         parts.remove(max(parts, key=lambda h: h[2]))
     return "  " + "   ".join(f"\x1b[1m{g}\x1b[0;2m: {a}\x1b[0m" for g, a, _ in parts)
-MOUSE = rb"\x1b\[<(\d+);(\d+);(\d+)([Mm])"
-ANSI = re.compile(r"\x1b\[[\d;]*m")
+
+
+def cells(line):
+    """Largura em celulas de uma linha colorida: CJK e emoji ocupam 2."""
+    return sum(0 if unicodedata.combining(c) else
+               2 if unicodedata.east_asian_width(c) in ("W", "F") else 1
+               for c in ANSI.sub("", line))
 
 
 def parse(args):
@@ -70,12 +90,16 @@ def parse(args):
         elif os.path.lexists(a):
             paths.append(a)
 
+    try:
+        locale.setlocale(locale.LC_COLLATE, "")  # mesma ordem do ls
+    except locale.Error:
+        pass  # locale invalido: o ls tambem cai na ordem C
     files = []
     for p in paths or ["."]:
         if os.path.isdir(p) and not dir_only:
             d = os.path.abspath(p)
-            files += sorted(os.path.join(d, n) for n in os.listdir(d)
-                            if hidden or not n.startswith("."))
+            files += [os.path.join(d, n) for n in sorted(os.listdir(d), key=locale.strxfrm)
+                      if hidden or not n.startswith(".")]
         else:
             files.append(os.path.abspath(p))
     return flags, files
@@ -85,15 +109,38 @@ def render(flags, files):
     """Uma linha por arquivo, na ordem de files, com cores e formato do ls."""
     # ponytail: -U mantem a ordem de files (alfabetica); flags de ordenacao
     # (-t, -S) sao ignoradas. Ordenar files em python se fizer falta.
+    # com a saida capturada o ls deixa de citar e escapar nomes como faz no
+    # terminal; -q e o QUOTING_STYLE devolvem isso (um "\n" no nome viraria 2 linhas)
+    env = {"QUOTING_STYLE": "shell-escape", **os.environ}
     lines = []
     for d, group in itertools.groupby(files, os.path.dirname):
         names = [os.path.basename(f) for f in group]
         # roda na pasta do arquivo para o ls mostrar so o nome
         out = subprocess.run(
-            ["ls", "-1", *flags, "-dU", "--color=always", "--", *names],
-            cwd=d, capture_output=True, text=True).stdout.splitlines()
+            ["ls", "-q", *flags, "-1dU", "--color=always", "--", *names],
+            cwd=d, env=env, capture_output=True, text=True).stdout.splitlines()
         lines += out if len(out) == len(names) else names
     return lines
+
+
+def one_per_line(flags):
+    """O ls poe 1 arquivo por linha com -l (e parentes: -g -o -n) ou -1."""
+    return any(f.split("=")[-1] in ("long", "verbose", "single-column") if f.startswith("--")
+               else set(f[1:]) & set("l1gon") for f in flags)
+
+
+def columns(widths, cols):
+    """Grade do ls -C: o maximo de colunas que cabe, preenchidas de cima pra baixo.
+
+    Devolve (linhas, largura de cada coluna); o arquivo i fica na linha i % linhas
+    e na coluna i // linhas, com 2 espacos entre colunas.
+    """
+    n = len(widths)
+    for k in range(min(n, max(cols // 3, 1)), 0, -1):
+        rows = -(-n // k)
+        w = [max(widths[c:c + rows]) for c in range(0, n, rows)]
+        if sum(w) + 2 * (len(w) - 1) < cols or len(w) == 1:
+            return rows, w
 
 
 class Axis:
@@ -102,17 +149,23 @@ class Axis:
     Cada evento do terminal diz "o mouse esta na celula n" e o ponteiro esta
     em p pixels; isso limita a origem a um intervalo. Intersectando os
     intervalos a origem converge para o pixel exato em poucos movimentos.
+
+    Intervalo vazio por pouco e o ponteiro que andou entre o terminal informar
+    e a leitura: ignora. Por mais de meia celula (misses) e erro que se acumula
+    a cada celula: o tamanho da celula esta errado (zoom, outro perfil).
     """
 
     def __init__(self, size):
-        self.size, self.lo, self.hi = size, None, None
+        self.size, self.lo, self.hi, self.misses = size, None, None, 0
 
     def feed(self, cell, p):  # cell 1-based
         lo, hi = p - cell * self.size + 1, p - (cell - 1) * self.size
-        if self.lo is None or lo > self.hi or hi < self.lo:
-            self.lo, self.hi = lo, hi  # 1o evento ou janela moveu/zoom: recomeca
-        else:
+        gap = 0 if self.lo is None else max(lo - self.hi, self.lo - hi)
+        if self.lo is not None and gap <= 0:
             self.lo, self.hi = max(self.lo, lo), min(self.hi, hi)
+        elif self.lo is None or gap > self.size // 2:
+            self.misses += 0 < gap < self.size
+            self.lo, self.hi = lo, hi  # 1o evento ou janela moveu: recomeca
 
     def start(self, cell):
         return (self.lo + self.hi) // 2 + (cell - 1) * self.size
@@ -152,30 +205,52 @@ def cell_size():
     return round(rect.width * sw), round(rect.height * sh), layout.get_font_description()
 
 
-def cursor_row(fd):
-    os.write(1, b"\x1b[6n")
-    buf = b""
-    while not buf.endswith(b"R"):
-        buf += os.read(fd, 1)
-    return int(re.search(rb"\[(\d+);\d+R", buf).group(1))
+def read_input(fd):
+    """Le o que o terminal mandou: ([(botao, coluna, linha)] do mouse, teclas).
+
+    Uma leitura pode cortar uma sequencia de mouse no meio; enquanto o fim for
+    o comeco de uma, espera o resto. Assim um Esc so e tecla se vier sozinho.
+    """
+    data = os.read(fd, 4096)
+    while PARTIAL.search(data) and select.select([fd], [], [], 0.05)[0]:
+        more = os.read(fd, 4096)
+        if not more:
+            break
+        data += more
+    events = [(int(b), int(col), int(row)) for b, col, row, _ in MOUSE.findall(data)]
+    return events, MOUSE.sub(b"", data)
 
 
-def run(files, lines, fd):
-    import gi
-    gi.require_version("Gtk", "3.0")
-    gi.require_version("Gdk", "3.0")
-    gi.require_version("PangoCairo", "1.0")
+def missing_requirement():
+    """Por que o arraste nao funciona nesta sessao; None se funciona."""
+    if os.environ.get("XDG_SESSION_TYPE") == "wayland" or os.environ.get("WAYLAND_DISPLAY"):
+        # Wayland nao deixa posicionar janela nem ler o ponteiro global
+        return 'arrastar requer sessão X11 (no login: "Ubuntu on Xorg")'
+    try:
+        import gi
+        gi.require_version("Gtk", "3.0")
+        gi.require_version("Gdk", "3.0")
+        gi.require_version("PangoCairo", "1.0")
+        gi.require_foreign("cairo")
+    except (ImportError, ValueError):
+        return "arrastar requer python3-gi, python3-gi-cairo e gir1.2-gtk-3.0"
+    return None
+
+
+def run(files, lines, fd, single):
     from gi.repository import Gdk, Gio, GLib, Gtk, PangoCairo
 
     cw, ch, font = cell_size()
     ax, ay = Axis(cw), Axis(ch)
     gfiles = [Gio.File.new_for_path(f) for f in files]
-    # todas as linhas com a largura da maior: nome curto nao vira alvo minusculo
-    width = max(len(ANSI.sub("", l)) for l in lines) or 1
-    top = cursor_row(fd) - len(lines)  # linha de tela do 1o arquivo (1-based)
+    widths = [cells(l) for l in lines]
+    # grade: o arquivo i fica na linha i % rows e na coluna i // rows, que comeca na
+    # celula colx[c] e tem a largura do maior nome dela (nome curto nao vira alvo
+    # minusculo); off: linha da grade no topo da tela; height: linhas acima da dica
+    rows, colw, colx, off, height = len(lines), [], [], 0, 0
     # i: linha sob o mouse; press: botao esquerdo segurado (modo "band" seleciona
     # arrastando, "drag" vai arrastar a selecao); anchor: base do shift+clique
-    st = {"i": None, "dragging": False, "press": None, "anchor": None}
+    st = {"i": None, "dragging": False, "press": None, "anchor": None, "warned": False}
     sel = set()
 
     seat = Gdk.Display.get_default().get_default_seat()
@@ -184,15 +259,57 @@ def run(files, lines, fd):
         _, x, y = seat.get_pointer().get_position()
         return x, y
 
+    def shown(i):
+        """O arquivo i esta na tela?"""
+        return 0 <= i < len(lines) and off <= i % rows < off + height
+
+    def fmt(i):
+        """Linha i como vai pra tela; selecionada = video invertido."""
+        if i not in sel:
+            return lines[i]
+        return "\x1b[7m" + lines[i].replace("\x1b[0m", "\x1b[0;7m") + "\x1b[0m"
+
     def paint(i):
-        """Redesenha a linha i no terminal; selecionada = video invertido."""
-        row = top + i
-        if row < 1:
-            return
-        line = lines[i]
-        if i in sel:
-            line = "\x1b[7m" + line.replace("\x1b[0m", "\x1b[0;7m") + "\x1b[0m"
-        os.write(1, f"\x1b7\x1b[{row};1H{line}\x1b[K\x1b8".encode())
+        if shown(i):
+            os.write(1, f"\x1b[{i % rows - off + 1};{colx[i // rows] + 1}H{fmt(i)}".encode())
+
+    def layout():
+        """Monta a grade para o tamanho atual do terminal."""
+        nonlocal rows, colw, colx, off, height
+        cols, scr = os.get_terminal_size(fd)
+        rows, colw = (len(lines), [max(widths)]) if single else columns(widths, cols)
+        colw = [min(w, cols) for w in colw]  # 1 coluna mais larga que a tela: corta
+        colx = [sum(colw[:c]) + 2 * c for c in range(len(colw))]
+        height = max(min(rows, scr - 1), 0)
+        off = min(off, rows - height)
+
+    # janela transparente que cobre a linha sob o mouse e recebe o clique
+    win = Gtk.Window(type=Gtk.WindowType.POPUP)
+
+    def redraw():
+        """Desenha a tela toda: o trecho visivel da grade e a dica embaixo."""
+        out = "\x1b[H"
+        for r in range(off, off + height):
+            out += "  ".join(fmt(i) + " " * (colw[c] - widths[i])
+                             for c, i in enumerate(range(r, len(lines), rows))) + "\x1b[K\r\n"
+        tail = MISALIGNED if st["warned"] else hint(os.get_terminal_size(fd).columns)
+        # sem \n depois da dica: na ultima linha ele rolaria a tela
+        os.write(1, (out + tail + "\x1b[K\x1b[J").encode())
+
+    def scroll(n):
+        """Rola a lista n linhas (n > 0 desce)."""
+        nonlocal off
+        new = min(max(off + n, 0), rows - height)
+        if new != off:
+            # o destaque fica no lugar, sobre o arquivo que rolou pra la (se houver)
+            i = None if st["i"] is None else st["i"] + new - off
+            off = new
+            redraw()
+            if i is not None and i < len(lines):
+                st["i"] = i
+                win.queue_draw()
+            else:
+                hover(None)
 
     def select(new):
         changed = sel ^ set(new)
@@ -204,12 +321,11 @@ def run(files, lines, fd):
     def span(a, b):
         return range(min(a, b), max(a, b) + 1)
 
-    # janela transparente que cobre a linha sob o mouse e recebe o clique
-    win = Gtk.Window(type=Gtk.WindowType.POPUP)
     win.set_visual(win.get_screen().get_rgba_visual())
     win.set_app_paintable(True)
     win.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK
-                   | Gdk.EventMask.BUTTON_MOTION_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+                   | Gdk.EventMask.BUTTON_MOTION_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK
+                   | Gdk.EventMask.SCROLL_MASK)
 
     composited = win.get_screen().is_composited()
     plain = [ANSI.sub("", l) for l in lines]
@@ -236,29 +352,43 @@ def run(files, lines, fd):
         Gdk.Cursor.new_from_name(w.get_display(), "grab")))
 
     def hover(i):
+        """Destaca o arquivo i; None esconde. So o terminal diz qual linha esta sob
+        o mouse: palpite por pixel erraria com outra janela por cima do terminal."""
         if st["dragging"] or st["press"]:
             return
-        if i is None or not 0 <= i < len(files) or ay.lo is None:
+        if i is None or not shown(i) or ay.lo is None:
             st["i"] = None
             win.hide()
             return
         if i == st["i"] and win.get_visible():
             return  # mesma linha: nada a mover
         st["i"] = i
-        win.move(ax.start(1), ay.start(top + i))
-        win.resize(width * cw, ch)
+        # move depois do show: com a janela oculta o GTK3 ignora o move quando
+        # o destino repete o da 1a exibicao, e ela reapareceria na linha antiga
+        c = i // rows
+        win.resize(colw[c] * cw, ch)
         win.show()
+        win.move(ax.start(colx[c] + 1), ay.start(i % rows - off + 1))
         win.queue_draw()
 
-    def rehover():
-        if ay.lo is not None:
-            hover(ay.cell(pointer()[1]) - top)
+    def unhover_if_away():
+        """Esconde o destaque se o ponteiro nao esta mais sobre ele (soltou o botao
+        ou o arraste longe); a volta pro terminal faz o terminal mostrar de novo."""
+        x, y = pointer()
+        (wx, wy), (w, h) = win.get_position(), win.get_size()
+        if not (wx <= x < wx + w and wy <= y < wy + h):
+            hover(None)
+
+    def query(i, attr):
+        """Gio.FileInfo do arquivo i; None se sumiu ou e symlink quebrado."""
+        try:
+            return gfiles[i].query_info(attr, 0, None)
+        except GLib.Error:
+            return None
 
     def icon(i):
-        try:
-            return gfiles[i].query_info("standard::icon", 0, None).get_icon()
-        except GLib.Error:
-            return Gio.ThemedIcon.new("text-x-generic")
+        info = query(i, "standard::icon")
+        return info.get_icon() if info else Gio.ThemedIcon.new("text-x-generic")
 
     def drag_icon(ctx):
         """Icone do 1o arquivo; com varios, um selo com a quantidade."""
@@ -299,7 +429,7 @@ def run(files, lines, fd):
 
     def drag_end(*_):
         st["dragging"] = False
-        rehover()
+        unhover_if_away()
 
     win.connect("drag-end", drag_end)
 
@@ -321,19 +451,22 @@ def run(files, lines, fd):
             return True
         if e.type != Gdk.EventType.BUTTON_PRESS:
             return True
-        mode = None
+        # collapse: soltar sem arrastar deixa so esta linha selecionada
+        mode, collapse = None, False
         if e.state & Gdk.ModifierType.SHIFT_MASK and st["anchor"] is not None:
             select(span(st["anchor"], i))
         elif e.state & Gdk.ModifierType.CONTROL_MASK:
             select(sel ^ {i})
             st["anchor"] = i
+            mode = "drag" if i in sel else None
         elif i in sel:
-            mode = "drag"
+            mode, collapse = "drag", True
         else:
             select({i})
             st["anchor"] = i
             mode = "band"
-        st["press"] = {"i": i, "x": e.x_root, "y": e.y_root, "mode": mode}
+        st["press"] = {"i": i, "x": e.x_root, "y": e.y_root, "mode": mode,
+                       "collapse": collapse}
         return True
 
     def motion(w, e):
@@ -353,11 +486,15 @@ def run(files, lines, fd):
                 begin_drag(e)
         elif not p.get("vertical"):
             pass  # ainda dentro do limiar
-        elif not ax.start(1) <= e.x_root < ax.start(1) + width * cw:
+        elif not (x0 := ax.start(colx[st["anchor"] // rows] + 1)) <= e.x_root \
+                < x0 + colw[st["anchor"] // rows] * cw:
             begin_drag(e)  # saiu da coluna dos nomes pro lado: vira arraste
         else:
-            j = min(max(ay.cell(int(e.y_root)) - top, 0), len(files) - 1)
-            select(span(st["anchor"], j))
+            # botao segurado: o terminal nao ve o mouse, so o pixel diz a linha
+            # na coluna de onde partiu, presa as linhas da tela
+            r = min(max(ay.cell(int(e.y_root)) - 1 + off, off), off + height - 1)
+            j = st["anchor"] // rows * rows + r
+            select(span(st["anchor"], min(j, len(lines) - 1)))
         return True
 
     win.connect("button-press-event", press)
@@ -367,14 +504,15 @@ def run(files, lines, fd):
         p, st["press"] = st["press"], None
         if st["dragging"]:
             return True
-        if e.button == 1 and p and p["mode"] == "drag":
-            select({p["i"]})  # clique simples numa linha ja selecionada
+        if e.button == 1 and p and p["collapse"]:
+            select({p["i"]})
             st["anchor"] = p["i"]
         elif e.button == 3 and st["i"] is not None:
             f = gfiles[st["i"]]
-            ctype = f.query_info("standard::content-type", 0, None).get_content_type()
+            info = query(st["i"], "standard::content-type")
+            ctype = info and info.get_content_type()
             menu = Gtk.Menu()
-            for app in Gio.AppInfo.get_all_for_type(ctype):
+            for app in Gio.AppInfo.get_all_for_type(ctype) if ctype else []:
                 item = Gtk.MenuItem(label=app.get_display_name())
                 item.connect("activate", lambda _, a=app: launch(a, f))
                 menu.append(item)
@@ -383,44 +521,86 @@ def run(files, lines, fd):
             menu.show_all()
             menu.popup_at_pointer(e)
             st["menu"] = menu  # segura referencia enquanto aberto
-        rehover()
+        unhover_if_away()
         return True
 
     win.connect("button-release-event", release)
 
     def leave(w, e):
-        # saiu da linha: o proprio ponteiro diz a linha nova, sem esperar o terminal
+        # saiu da linha: esconde; no terminal o proximo movimento mostra a nova
         # (ignora saidas causadas por grab: inicio do arraste, menu)
         if e.mode == Gdk.CrossingMode.NORMAL:
-            rehover()
+            hover(None)
 
     win.connect("leave-notify-event", leave)
 
-    buf = [b""]
+    def wheel(w, e):
+        # com o ponteiro sobre o destaque a roda vem pra esta janela, nao pro terminal
+        down = e.direction == Gdk.ScrollDirection.DOWN
+        if down or e.direction == Gdk.ScrollDirection.UP:
+            scroll(3 if down else -3)
+        return True
+
+    win.connect("scroll-event", wheel)
 
     def on_input(source, cond):
-        data = buf[0] + os.read(fd, 256)
-        for btn, col, row, kind in re.findall(MOUSE, data):
+        events, keys = read_input(fd)
+        if not events and not keys:
+            Gtk.main_quit()  # terminal fechou (EOF): sair em vez de girar em falso
+            return False
+        if events:
+            # roda: botao 64 sobe, 65 desce (+4/8/16 com shift/alt/ctrl)
+            scroll(sum(3 if b & 1 else -3 for b, _, _ in events if b & ~28 in (64, 65)))
+            # o ponteiro lido e o de agora: so o evento mais novo bate com ele
+            _, col, row = events[-1]
             x, y = pointer()
-            ax.feed(int(col), x)
-            ay.feed(int(row), y)
-            hover(int(row) - top)
-        rest = re.sub(MOUSE, b"", data)
-        if rest == b"\x1b" and sel:
+            ax.feed(col, x)
+            ay.feed(row, y)
+            r = row - 1 + off  # celula (col, row) -> arquivo: linha da grade e coluna
+            c = next((c for c, x in enumerate(colx) if x < col <= x + colw[c]), None)
+            hover(None if c is None or r >= off + height else c * rows + r)
+        page = max(height - 1, 1)
+        for arrow, pg in NAV.findall(keys):
+            scroll({b"A": -1, b"B": 1, b"H": -rows, b"F": rows,
+                    b"5": -page, b"6": page}[arrow or pg])
+        keys = NAV.sub(b"", keys)
+        # ponytail: so o eixo y avisa; celulas de 8px no x confundem atraso com zoom
+        if not st["warned"] and ay.misses >= 3:
+            st["warned"] = True
+            redraw()  # aviso no lugar da linha de ajuda
+        if b"\x1b[O" in keys:
+            # aba trocada ou janela sem foco: nenhum movimento chega para esconder;
+            # num terminal visivel o proximo movimento mostra de novo
+            hover(None)
+        if keys == b"\x1b" and sel:
             select(())  # Esc limpa a selecao; outro Esc sai
-        elif b"q" in rest or b"\x03" in rest or rest == b"\x1b":
+        elif b"q" in keys or b"\x03" in keys or keys == b"\x1b":
             Gtk.main_quit()
             return False
-        elif b"a" in rest:
+        elif b"a" in keys:
             select(range(len(files)))
-        buf[0] = rest if rest.startswith(b"\x1b[") else b""  # sequencia incompleta
+        return True
+
+    def resize():
+        # zoom tambem redimensiona: mede de novo e redesenha no tamanho novo
+        st["warned"], ay.misses = False, 0
+        hover(None)
+        layout()
+        redraw()
         return True
 
     GLib.io_add_watch(fd, GLib.IO_IN, on_input)
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGWINCH, resize)
     # morto por sinal (kill, fechar aba): sai pelo caminho normal e restaura o terminal
     for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
         GLib.unix_signal_add(GLib.PRIORITY_HIGH, sig, lambda *_: Gtk.main_quit() or False)
-    os.write(1, b"\x1b[?1003h\x1b[?1006h")  # todo movimento do mouse, formato SGR
+    # tela cheia (sem historico pra rolar: o terminal nunca move a lista sem o dls
+    # saber), sem cursor, sem quebra de linha (1 arquivo = 1 linha de tela)
+    os.write(1, b"\x1b[?1049h\x1b[?25l\x1b[?7l")
+    layout()
+    redraw()
+    # todo movimento do mouse, formato SGR; e aviso de foco (\e[I / \e[O)
+    os.write(1, b"\x1b[?1003h\x1b[?1006h\x1b[?1004h")
     Gtk.main()
 
 
@@ -429,27 +609,30 @@ def main():
     if subprocess.run(["ls", *args], capture_output=True).returncode:
         return subprocess.call(["ls", *args])  # mostra o erro do ls
     flags, files = parse(args)
-    # Wayland nao deixa posicionar janela nem ler o ponteiro global: vira ls
-    wayland = os.environ.get("XDG_SESSION_TYPE") == "wayland" or os.environ.get("WAYLAND_DISPLAY")
-    if wayland and sys.stdin.isatty():
-        print("dls: arrastar requer sessão X11 (no login: \"Ubuntu on Xorg\")", file=sys.stderr)
-    if not files or not sys.stdin.isatty() or not os.environ.get("DISPLAY") or wayland:
+    # saida redirecionada (dls > x, dls | less): nao ha terminal pra desenhar
+    if not files or not (sys.stdin.isatty() and sys.stdout.isatty()) \
+            or not os.environ.get("DISPLAY"):
+        return subprocess.call(["ls", "--color=auto", *args])
+    problem = missing_requirement()
+    if problem:
+        print(f"dls: {problem}", file=sys.stderr)
         return subprocess.call(["ls", "--color=auto", *args])
 
     lines = render(flags, files)
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
-    os.write(1, b"\x1b[?7l")  # sem quebra de linha: 1 arquivo = 1 linha de tela
-    os.write(1, ("\n".join(lines) + "\n" + hint(os.get_terminal_size(fd).columns)).encode())
     try:
         tty.setraw(fd)
-        run(files, lines, fd)
+        run(files, lines, fd, one_per_line(flags))
     finally:
         try:
-            os.write(1, b"\x1b[?1003l\x1b[?1006l\x1b[?7h\r\x1b[2K")  # apaga a dica
+            os.write(1, b"\x1b[?1003l\x1b[?1006l\x1b[?1004l\x1b[?7h\x1b[?25h\x1b[?1049l")
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
         except OSError:
             pass  # aba fechada: nao ha mais terminal para restaurar
+        else:
+            # fora da tela cheia, a lista fica no terminal: a do proprio ls
+            subprocess.call(["ls", "--color=auto", *args])
     return 0
 
 

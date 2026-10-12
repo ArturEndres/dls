@@ -1,6 +1,6 @@
 <div align="center">
 
-[Português (Brasil)](README.md) · **English**
+**English** · [Português (Brasil)](README.pt-BR.md)
 
 <h1>dls</h1>
 
@@ -40,9 +40,9 @@ Terminals don't let you drag files *out*. To send a file through the browser, so
 
 - **Native drag** (XDND): works with any app that accepts dropped files.
 - **Multi-select**: drag over the names (like selecting text), Shift+click for a range, Ctrl+click to toggle.
-- **Visual cues**: the row under the mouse is highlighted (translucent with a compositor, solid without one, as in the demos), the cursor turns into a hand, the selection is shown in reverse video and the drag icon shows how many files are coming along.
+- **Visual cues**: the name under the mouse is highlighted (translucent with a compositor, solid without one, as in the demos), the cursor turns into a hand, the selection is shown in reverse video and the drag icon shows how many files are coming along.
 - **Open**: double-click opens with the default app. Right-click shows an *open with…* menu listing the apps installed for that file type.
-- **Keeps the `ls` look**: colors, `-l`, `-h`, `-a` and the other display flags.
+- **Keeps the `ls` look**: colors, columns, `-l`, `-h`, `-a` and the other display flags.
 - **Lightweight**: a single Python file, nothing to install on a standard GNOME desktop. The listing shows up in ~30 ms and interaction is ready in ~150 ms.
 - **Never leaves the terminal broken**: quitting with `q`, closing the tab or receiving `kill` all restore the terminal.
 
@@ -93,7 +93,7 @@ dls *.pdf            # only files matching the pattern
 dls -a               # include hidden files
 ```
 
-`dls` prints the listing and waits for the mouse. When you quit, the listing stays in the terminal.
+While open, `dls` takes over the terminal screen, like `less`: the terminal has no scrollback to move the list out from under the highlight. When you quit, the listing is printed in the terminal just like `ls`. Files are laid out in columns like `ls`; with `-l` or `-1`, one per line.
 
 ### Mouse
 
@@ -101,21 +101,23 @@ dls -a               # include hidden files
 
 | Action | Result |
 |---|---|
-| Hover over a name | highlights the row; the cursor turns into a hand |
+| Hover over a name | highlights the name; the cursor turns into a hand |
 | Press on a name and move **sideways** | drags that file |
-| Press and move **up/down** | selects the rows you pass over (the first movement decides between dragging and selecting) |
-| …then leave the names column sideways | drags everything selected |
+| Press and move **up/down** | selects the files you pass over in that column (the first movement decides between dragging and selecting) |
+| …then leave the column sideways | drags everything selected |
 | Click | selects just that file |
 | Shift + click | selects the range from the last click |
 | Ctrl + click | adds to or removes from the selection |
-| Drag a row that's already selected | drags the whole selection |
+| Drag a file that's already selected | drags the whole selection |
 | Double-click | opens with the default app |
 | Right-click | *open with…* menu |
+| Mouse wheel | scrolls the list |
 
 ### Keyboard
 
 | Key | Result |
 |---|---|
+| `↑` `↓` `PgUp` `PgDn` `Home` `End` | scroll the list |
 | `a` | select all |
 | `Esc` | clear the selection (with nothing selected, quit) |
 | `q` / `Ctrl+C` | quit |
@@ -130,21 +132,21 @@ No program running *inside* a terminal can start a drag: while the button is hel
 
 1. **Mouse tracking.** `dls` turns on the terminal's mouse tracking mode (`?1003` + `?1006`). From then on, the terminal reports which cell (row, column) the mouse is in.
 2. **Calibration.** The cell size comes from your gnome-terminal profile font, measured with Pango the same way VTE (gnome-terminal's engine) measures it. The grid's position on screen is deduced by matching each terminal event with the real pointer position. Each event narrows the origin down to an interval, and the intersection converges to the exact pixel within a few movements.
-3. **Transparent window.** A borderless, semi-transparent window is placed exactly over the row under the mouse. It, not the terminal, receives the click, so the drag is a native GTK/XDND drag.
+3. **Transparent window.** A borderless, semi-transparent window is placed exactly over the name under the mouse. It, not the terminal, receives the click, so the drag is a native GTK/XDND drag.
 4. **Selection.** Kept inside `dls` and drawn in the terminal itself with ANSI sequences (reverse video).
+5. **Full screen.** The list is drawn on the terminal's alternate screen (`?1049`), which has no scrollback: the scrollbar and `Shift+PgUp` can't move the list behind `dls`'s back, so the highlight is always over the right file.
 
 ## Limitations
 
 - **X11 only.** On Wayland, a window can't place itself at absolute coordinates or read the global pointer position. On a Wayland session `dls` warns and behaves like `ls`.
-- **Terminal zoom** (`Ctrl +` / `Ctrl -`) or a non-default profile misaligns the highlight, since the measurement comes from the default profile font.
+- **Terminal zoom** (`Ctrl +` / `Ctrl -`) or a non-default profile misaligns the highlight, since the measurement comes from the default profile font. `dls` notices it and shows a warning in place of the help line.
 - **Sorting:** the listing is always alphabetical. Flags like `-t` and `-S` are ignored.
-- **Lists taller than the screen:** only visible rows respond to the mouse. Filter instead (`dls *.pdf`).
-- **Names with wide characters** (CJK, emoji) may make the highlight a bit narrower than the row.
 - **Flags with a separate argument** (`-I pattern`, `-w 80`) are passed to `ls`, but the argument isn't treated as a draggable file. Files hidden by `-I` still show up as draggable.
-- **If the terminal starts printing numbers when you click** (only happens if `dls` is killed with `kill -9`), restore it with `reset` or with:
+- **While open**, `-l` doesn't show the `total` line and several folders aren't split under headers. The listing printed on exit has both.
+- **If the terminal is left blank or prints numbers when you click** (only happens if `dls` is killed with `kill -9`), restore it with `reset` or with:
 
   ```bash
-  printf '\e[?1003l\e[?1006l\e[?7h'
+  printf '\e[?1003l\e[?1006l\e[?1004l\e[?7h\e[?25h\e[?1049l'
   ```
 
 ## Development
@@ -155,7 +157,7 @@ The project is a single executable file (`dls`) plus an automated check:
 python3 test_dls.py   # prints "ok"
 ```
 
-The test covers flag parsing, the file list, grid calibration and the help line. The graphical part was validated in a nested X server (Xephyr) with a real VTE terminal and a mouse simulated through XTest.
+The test covers flag parsing, the file list and its order, the column layout (checked against `ls -C`), grid calibration, terminal input reading and the help line. The graphical part was validated in a nested X server (Xephyr) with a real VTE terminal and a mouse simulated through XTest.
 
 ## License
 
