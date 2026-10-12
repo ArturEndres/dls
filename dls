@@ -1,0 +1,419 @@
+#!/usr/bin/env python3
+"""dls: ls com drag and drop direto do terminal.
+
+Uso:  dls [flags do ls] [caminhos...]
+      dls -lh ~/Downloads
+
+Passe o mouse sobre um arquivo da lista: a linha destaca e o cursor vira mao.
+  arrastar sobre os nomes  -> seleciona (como selecionar texto); saindo pro lado
+                              da coluna dos nomes, vira arraste dos selecionados
+  arrastar uma selecionada -> arrasta toda a selecao
+  clique / shift / ctrl    -> seleciona um / intervalo / adiciona-remove
+  a                        -> seleciona todos; Esc limpa a selecao
+  duplo clique             -> abre com o app padrao
+  clique direito           -> menu "abrir com..."
+  q / Esc / Ctrl+C         -> sai (a listagem fica no terminal)
+
+Como funciona: o terminal informa em qual linha esta o mouse (mouse tracking);
+uma janela transparente e colocada exatamente sobre essa linha e e ela que
+recebe o clique, entao o arraste e nativo (XDND), sem passar pelo terminal.
+
+Sem dependencias extras: python3 + GTK3 (ja presentes no GNOME).
+Requer X11 e gnome-terminal (tamanho da celula vem da fonte do perfil).
+"""
+import itertools
+import os
+import re
+import signal
+import subprocess
+import sys
+import termios
+import tty
+
+HINT = "\x1b[2m  arraste nomes p/ selecionar, pro lado p/ enviar · shift/ctrl · 2× abre · q sai\x1b[0m"
+MOUSE = rb"\x1b\[<(\d+);(\d+);(\d+)([Mm])"
+ANSI = re.compile(r"\x1b\[[\d;]*m")
+
+
+def parse(args):
+    """(flags do ls, arquivos que o ls listaria em caminho absoluto)."""
+    flags, paths, hidden, dir_only, end = [], [], False, False, False
+    for a in args:
+        if end:
+            paths.append(a)
+        elif a == "--":
+            end = True
+        elif a in ("--all", "--almost-all"):
+            hidden = True
+            flags.append(a)
+        elif a == "--directory":
+            dir_only = True
+        elif a.startswith("--"):
+            flags.append(a)
+        elif a.startswith("-") and len(a) > 1:
+            # flags agrupadas (ex: -la, -ld)
+            hidden |= "a" in a or "A" in a
+            dir_only |= "d" in a
+            flags.append(a)
+        # ponytail: argumento de flag (-I '*.o', -w 80) cai aqui; ignorado se nao
+        # existir como arquivo. Parsear cada flag do ls se der falso positivo.
+        elif os.path.lexists(a):
+            paths.append(a)
+
+    files = []
+    for p in paths or ["."]:
+        if os.path.isdir(p) and not dir_only:
+            d = os.path.abspath(p)
+            files += sorted(os.path.join(d, n) for n in os.listdir(d)
+                            if hidden or not n.startswith("."))
+        else:
+            files.append(os.path.abspath(p))
+    return flags, files
+
+
+def render(flags, files):
+    """Uma linha por arquivo, na ordem de files, com cores e formato do ls."""
+    # ponytail: -U mantem a ordem de files (alfabetica); flags de ordenacao
+    # (-t, -S) sao ignoradas. Ordenar files em python se fizer falta.
+    lines = []
+    for d, group in itertools.groupby(files, os.path.dirname):
+        names = [os.path.basename(f) for f in group]
+        # roda na pasta do arquivo para o ls mostrar so o nome
+        out = subprocess.run(
+            ["ls", "-1", *flags, "-dU", "--color=always", "--", *names],
+            cwd=d, capture_output=True, text=True).stdout.splitlines()
+        lines += out if len(out) == len(names) else names
+    return lines
+
+
+class Axis:
+    """Descobre onde a grade do terminal comeca na tela, num eixo.
+
+    Cada evento do terminal diz "o mouse esta na celula n" e o ponteiro esta
+    em p pixels; isso limita a origem a um intervalo. Intersectando os
+    intervalos a origem converge para o pixel exato em poucos movimentos.
+    """
+
+    def __init__(self, size):
+        self.size, self.lo, self.hi = size, None, None
+
+    def feed(self, cell, p):  # cell 1-based
+        lo, hi = p - cell * self.size + 1, p - (cell - 1) * self.size
+        if self.lo is None or lo > self.hi or hi < self.lo:
+            self.lo, self.hi = lo, hi  # 1o evento ou janela moveu/zoom: recomeca
+        else:
+            self.lo, self.hi = max(self.lo, lo), min(self.hi, hi)
+
+    def start(self, cell):
+        return (self.lo + self.hi) // 2 + (cell - 1) * self.size
+
+    def cell(self, p):
+        return (p - (self.lo + self.hi) // 2) // self.size + 1
+
+
+def gsetting(schema, key, path=None):
+    """Le uma chave do GSettings; None se o schema nao existir (sem GNOME)."""
+    from gi.repository import Gio
+    src = Gio.SettingsSchemaSource.get_default()
+    if not src or not src.lookup(schema, True):
+        return None  # Gio.Settings.new() com schema ausente aborta o processo
+    s = Gio.Settings.new_with_path(schema, path) if path else Gio.Settings.new(schema)
+    return s.get_value(key).unpack()
+
+
+def cell_size():
+    """Tamanho em pixels da celula do terminal, pela fonte do perfil padrao."""
+    from gi.repository import Gtk, Pango
+    font = gsetting("org.gnome.desktop.interface", "monospace-font-name") or "Monospace 11"
+    sw = sh = 1.0
+    uid = gsetting("org.gnome.Terminal.ProfilesList", "default")
+    if uid:
+        path = f"/org/gnome/terminal/legacy/profiles:/:{uid}/"
+        prof = lambda k: gsetting("org.gnome.Terminal.Legacy.Profile", k, path)
+        if not prof("use-system-font"):
+            font = prof("font")
+        sw, sh = prof("cell-width-scale"), prof("cell-height-scale")
+    # ponytail: le a fonte do perfil padrao; zoom (Ctrl +) ou outro perfil
+    # desalinha. Ler o perfil da aba atual se precisar.
+    # a VTE mede a celula pelo retangulo logico de um caractere: o mesmo da Pango
+    layout = Gtk.Label().create_pango_layout("M")
+    layout.set_font_description(Pango.FontDescription.from_string(font))
+    rect = layout.get_pixel_extents()[1]
+    return round(rect.width * sw), round(rect.height * sh)
+
+
+def cursor_row(fd):
+    os.write(1, b"\x1b[6n")
+    buf = b""
+    while not buf.endswith(b"R"):
+        buf += os.read(fd, 1)
+    return int(re.search(rb"\[(\d+);\d+R", buf).group(1))
+
+
+def run(files, lines, fd):
+    import gi
+    gi.require_version("Gtk", "3.0")
+    gi.require_version("Gdk", "3.0")
+    from gi.repository import Gdk, Gio, GLib, Gtk
+
+    cw, ch = cell_size()
+    ax, ay = Axis(cw), Axis(ch)
+    gfiles = [Gio.File.new_for_path(f) for f in files]
+    # todas as linhas com a largura da maior: nome curto nao vira alvo minusculo
+    width = max(len(ANSI.sub("", l)) for l in lines) or 1
+    top = cursor_row(fd) - len(lines)  # linha de tela do 1o arquivo (1-based)
+    # i: linha sob o mouse; press: botao esquerdo segurado (modo "band" seleciona
+    # arrastando, "drag" vai arrastar a selecao); anchor: base do shift+clique
+    st = {"i": None, "dragging": False, "press": None, "anchor": None}
+    sel = set()
+
+    seat = Gdk.Display.get_default().get_default_seat()
+
+    def pointer():
+        _, x, y = seat.get_pointer().get_position()
+        return x, y
+
+    def paint(i):
+        """Redesenha a linha i no terminal; selecionada = video invertido."""
+        row = top + i
+        if row < 1:
+            return
+        line = lines[i]
+        if i in sel:
+            line = "\x1b[7m" + line.replace("\x1b[0m", "\x1b[0;7m") + "\x1b[0m"
+        os.write(1, f"\x1b7\x1b[{row};1H{line}\x1b[K\x1b8".encode())
+
+    def select(new):
+        changed = sel ^ set(new)
+        sel.clear()
+        sel.update(new)
+        for i in changed:
+            paint(i)
+
+    def span(a, b):
+        return range(min(a, b), max(a, b) + 1)
+
+    # janela transparente que cobre a linha sob o mouse e recebe o clique
+    win = Gtk.Window(type=Gtk.WindowType.POPUP)
+    win.set_visual(win.get_screen().get_rgba_visual())
+    win.set_app_paintable(True)
+    win.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK
+                   | Gdk.EventMask.BUTTON_MOTION_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+
+    def draw(w, cr):
+        cr.set_source_rgba(0.35, 0.6, 1.0, 0.28)
+        cr.paint()
+        cr.set_source_rgba(0.35, 0.6, 1.0, 0.9)
+        cr.rectangle(0.5, 0.5, w.get_allocated_width() - 1, w.get_allocated_height() - 1)
+        cr.stroke()
+
+    win.connect("draw", draw)
+    win.connect("realize", lambda w: w.get_window().set_cursor(
+        Gdk.Cursor.new_from_name(w.get_display(), "grab")))
+
+    def hover(i):
+        if st["dragging"] or st["press"]:
+            return
+        if i is None or not 0 <= i < len(files) or ay.lo is None:
+            st["i"] = None
+            win.hide()
+            return
+        if i == st["i"] and win.get_visible():
+            return  # mesma linha: nada a mover
+        st["i"] = i
+        win.move(ax.start(1), ay.start(top + i))
+        win.resize(width * cw, ch)
+        win.show()
+
+    def rehover():
+        if ay.lo is not None:
+            hover(ay.cell(pointer()[1]) - top)
+
+    def icon(i):
+        try:
+            return gfiles[i].query_info("standard::icon", 0, None).get_icon()
+        except GLib.Error:
+            return Gio.ThemedIcon.new("text-x-generic")
+
+    def drag_icon(ctx):
+        """Icone do 1o arquivo; com varios, um selo com a quantidade."""
+        first = min(sel)
+        if len(sel) == 1:
+            Gtk.drag_set_icon_gicon(ctx, icon(first), 0, 0)
+            return
+        import cairo
+        info = Gtk.IconTheme.get_default().lookup_by_gicon(icon(first), 48, 0)
+        surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 64, 64)
+        cr = cairo.Context(surf)
+        if info:
+            Gdk.cairo_set_source_pixbuf(cr, info.load_icon(), 0, 16)
+            cr.paint()
+        cr.set_source_rgb(0.2, 0.45, 0.95)
+        cr.arc(46, 18, 16, 0, 6.3)
+        cr.fill()
+        cr.set_source_rgb(1, 1, 1)
+        cr.select_font_face("Sans", 0, 1)
+        cr.set_font_size(15)
+        txt = str(len(sel))
+        ext = cr.text_extents(txt)
+        cr.move_to(46 - ext.width / 2 - ext.x_bearing, 18 + ext.height / 2)
+        cr.show_text(txt)
+        Gtk.drag_set_icon_surface(ctx, surf)
+
+    targets = Gtk.TargetList.new([])
+    targets.add_uri_targets(0)
+
+    def begin_drag(e):
+        st["press"] = None
+        st["dragging"] = True
+        win.drag_begin_with_coordinates(targets, Gdk.DragAction.COPY, 1, e, -1, -1)
+
+    win.connect("drag-begin", lambda w, ctx: drag_icon(ctx))
+    win.connect("drag-data-get", lambda w, ctx, data, info, t: data.set_uris(
+        [gfiles[i].get_uri() for i in sorted(sel)]))
+
+    def drag_end(*_):
+        st["dragging"] = False
+        rehover()
+
+    win.connect("drag-end", drag_end)
+
+    def launch(app, f):  # app None = padrao do sistema
+        try:
+            if app:
+                app.launch([f], None)
+            else:
+                Gio.AppInfo.launch_default_for_uri(f.get_uri(), None)
+        except GLib.Error:
+            pass
+
+    def press(w, e):
+        i = st["i"]
+        if e.button != 1 or i is None:
+            return True
+        if e.type == Gdk.EventType._2BUTTON_PRESS:
+            launch(None, gfiles[i])
+            return True
+        if e.type != Gdk.EventType.BUTTON_PRESS:
+            return True
+        mode = None
+        if e.state & Gdk.ModifierType.SHIFT_MASK and st["anchor"] is not None:
+            select(span(st["anchor"], i))
+        elif e.state & Gdk.ModifierType.CONTROL_MASK:
+            select(sel ^ {i})
+            st["anchor"] = i
+        elif i in sel:
+            mode = "drag"
+        else:
+            select({i})
+            st["anchor"] = i
+            mode = "band"
+        st["press"] = {"i": i, "x": e.x_root, "y": e.y_root, "mode": mode}
+        return True
+
+    def motion(w, e):
+        p = st["press"]
+        if not p or not p["mode"]:
+            return True
+        if p["mode"] == "drag":
+            if w.drag_check_threshold(int(p["x"]), int(p["y"]), int(e.x_root), int(e.y_root)):
+                begin_drag(e)
+        elif not ax.start(1) <= e.x_root < ax.start(1) + width * cw:
+            begin_drag(e)  # saiu da coluna dos nomes pro lado: vira arraste
+        else:
+            j = min(max(ay.cell(int(e.y_root)) - top, 0), len(files) - 1)
+            select(span(st["anchor"], j))
+        return True
+
+    win.connect("button-press-event", press)
+    win.connect("motion-notify-event", motion)
+
+    def release(w, e):
+        p, st["press"] = st["press"], None
+        if st["dragging"]:
+            return True
+        if e.button == 1 and p and p["mode"] == "drag":
+            select({p["i"]})  # clique simples numa linha ja selecionada
+            st["anchor"] = p["i"]
+        elif e.button == 3 and st["i"] is not None:
+            f = gfiles[st["i"]]
+            ctype = f.query_info("standard::content-type", 0, None).get_content_type()
+            menu = Gtk.Menu()
+            for app in Gio.AppInfo.get_all_for_type(ctype):
+                item = Gtk.MenuItem(label=app.get_display_name())
+                item.connect("activate", lambda _, a=app: launch(a, f))
+                menu.append(item)
+            if not menu.get_children():
+                menu.append(Gtk.MenuItem(label="(nenhum app)", sensitive=False))
+            menu.show_all()
+            menu.popup_at_pointer(e)
+            st["menu"] = menu  # segura referencia enquanto aberto
+        rehover()
+        return True
+
+    win.connect("button-release-event", release)
+
+    def leave(w, e):
+        # saiu da linha: o proprio ponteiro diz a linha nova, sem esperar o terminal
+        # (ignora saidas causadas por grab: inicio do arraste, menu)
+        if e.mode == Gdk.CrossingMode.NORMAL:
+            rehover()
+
+    win.connect("leave-notify-event", leave)
+
+    buf = [b""]
+
+    def on_input(source, cond):
+        data = buf[0] + os.read(fd, 256)
+        for btn, col, row, kind in re.findall(MOUSE, data):
+            x, y = pointer()
+            ax.feed(int(col), x)
+            ay.feed(int(row), y)
+            hover(int(row) - top)
+        rest = re.sub(MOUSE, b"", data)
+        if rest == b"\x1b" and sel:
+            select(())  # Esc limpa a selecao; outro Esc sai
+        elif b"q" in rest or b"\x03" in rest or rest == b"\x1b":
+            Gtk.main_quit()
+            return False
+        elif b"a" in rest:
+            select(range(len(files)))
+        buf[0] = rest if rest.startswith(b"\x1b[") else b""  # sequencia incompleta
+        return True
+
+    GLib.io_add_watch(fd, GLib.IO_IN, on_input)
+    # morto por sinal (kill, fechar aba): sai pelo caminho normal e restaura o terminal
+    for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+        GLib.unix_signal_add(GLib.PRIORITY_HIGH, sig, lambda *_: Gtk.main_quit() or False)
+    os.write(1, b"\x1b[?1003h\x1b[?1006h")  # todo movimento do mouse, formato SGR
+    Gtk.main()
+
+
+def main():
+    args = sys.argv[1:]
+    if subprocess.run(["ls", *args], capture_output=True).returncode:
+        return subprocess.call(["ls", *args])  # mostra o erro do ls
+    flags, files = parse(args)
+    # Wayland nao deixa posicionar janela nem ler o ponteiro global: vira ls
+    wayland = os.environ.get("XDG_SESSION_TYPE") == "wayland" or os.environ.get("WAYLAND_DISPLAY")
+    if wayland and sys.stdin.isatty():
+        print("dls: arrastar requer sessão X11 (no login: \"Ubuntu on Xorg\")", file=sys.stderr)
+    if not files or not sys.stdin.isatty() or not os.environ.get("DISPLAY") or wayland:
+        return subprocess.call(["ls", "--color=auto", *args])
+
+    lines = render(flags, files)
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    os.write(1, b"\x1b[?7l")  # sem quebra de linha: 1 arquivo = 1 linha de tela
+    os.write(1, ("\n".join(lines) + "\n" + HINT).encode())
+    try:
+        tty.setraw(fd)
+        run(files, lines, fd)
+    finally:
+        os.write(1, b"\x1b[?1003l\x1b[?1006l\x1b[?7h\r\x1b[2K")  # apaga a dica
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
