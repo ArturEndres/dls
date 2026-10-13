@@ -1,0 +1,15 @@
+name: test
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # the oldest Python the README promises and a current one
+        python: ["3.8", "3.13"]
+    container: python:${{ matrix.python }}-slim
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 test_dls.py

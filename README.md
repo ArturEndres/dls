@@ -9,6 +9,7 @@
 <p>List files as usual and drag them <b>straight out of the terminal</b> into your browser,<br>file manager, WhatsApp Web or any app that accepts files.</p>
 
 <p>
+<a href="https://github.com/ArturEndres/dls/actions/workflows/test.yml"><img alt="tests" src="https://github.com/ArturEndres/dls/actions/workflows/test.yml/badge.svg"></a>
 <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-yellow"></a>
 <img alt="Python 3.8+" src="https://img.shields.io/badge/python-3.8%2B-3776AB?logo=python&logoColor=white">
 <img alt="Linux X11" src="https://img.shields.io/badge/linux-X11-FCC624?logo=linux&logoColor=black">
@@ -42,9 +43,9 @@ Terminals don't let you drag files *out*. To send a file through the browser, so
 - **Multi-select**: drag over the names (like selecting text), Shift+click for a range, Ctrl+click to toggle.
 - **Visual cues**: the name under the mouse is highlighted (translucent with a compositor, solid without one, as in the demos), the cursor turns into a hand, the selection is shown in reverse video and the drag icon shows how many files are coming along.
 - **Open**: double-click opens with the default app. Right-click shows an *open with…* menu listing the apps installed for that file type.
-- **Keeps the `ls` look**: colors, columns, `-l`, `-h`, `-a` and the other display flags, plus the sort order (`-t`, `-S`, `-r`, `--sort`…).
+- **Keeps the `ls` look**: colors, layouts (`-C`, `-x`, `-m`, `-l`, `-1`), `-h`, `-F` and the other display flags, plus the order and the filters, because `ls` itself picks the files (`-t`, `-S`, `-r`, `-U`, `-a`, `-I`, `--hide`, `-R`…).
 - **Lightweight**: a single Python file, nothing to install on a standard GNOME desktop. The listing shows up in ~30 ms and interaction is ready in ~150 ms.
-- **Never leaves the terminal broken**: quitting with `q`, closing the tab or receiving `kill` all restore the terminal.
+- **Never leaves the terminal broken**: quitting with `q`, closing the tab or receiving `kill` all restore the terminal. `Ctrl+Z` suspends it like any program.
 
 ## Requirements
 
@@ -93,7 +94,7 @@ dls *.pdf            # only files matching the pattern
 dls -a               # include hidden files
 ```
 
-While open, `dls` takes over the terminal screen, like `less`: the terminal has no scrollback to move the list out from under the highlight. When you quit, the listing is printed in the terminal just like `ls`. Files are laid out in columns like `ls`; with `-l` or `-1`, one per line.
+While open, `dls` takes over the terminal screen, like `less`: the terminal has no scrollback to move the list out from under the highlight. When you quit, the listing is printed in the terminal just like `ls`. Files are laid out like `ls` lays them out: in columns, across with `-x`, comma-separated with `-m`, one per line with `-l` or `-1`.
 
 ### Mouse
 
@@ -120,11 +121,12 @@ While open, `dls` takes over the terminal screen, like `less`: the terminal has 
 | `↑` `↓` `PgUp` `PgDn` `Home` `End` | scroll the list |
 | `a` | select all |
 | `Esc` | clear the selection (with nothing selected, quit) |
+| `Ctrl+Z` | suspend (`fg` brings it back) |
 | `q` / `Ctrl+C` | quit |
 
 ### Outside an interactive terminal
 
-With output redirected (`dls | grep x`) or without a graphical display (SSH, TTY), `dls` behaves exactly like `ls`. `ls` errors (a missing path, for example) are shown and the exit code is preserved.
+With output redirected (`dls | grep x`) or without a reachable graphical display (SSH, TTY, a stale `DISPLAY` in tmux), `dls` behaves exactly like `ls`. So does `dls --help`. `ls` errors (a missing path, for example) are shown and the exit code is preserved.
 
 ## How it works
 
@@ -140,9 +142,7 @@ No program running *inside* a terminal can start a drag: while the button is hel
 
 - **X11 only.** On Wayland, a window can't place itself at absolute coordinates or read the global pointer position. On a Wayland session `dls` warns and behaves like `ls`.
 - **Terminal zoom** (`Ctrl +` / `Ctrl -`) or a non-default profile misaligns the highlight, since the measurement comes from the default profile font. `dls` notices it and shows a warning in place of the help line.
-- **Sorting:** `-U`/`-f` keep name order instead of directory order, and `-lc`/`-lu` without `-t` sort by time (`ls` would sort by name).
-- **Flags with a separate argument** (`-I pattern`, `-w 80`) are passed to `ls`, but the argument isn't treated as a draggable file. Files hidden by `-I` still show up as draggable.
-- **While open**, `-l` doesn't show the `total` line and several folders aren't split under headers. The listing printed on exit has both.
+- **While open**, `-l` doesn't show the `total` line, and several folders (or `-R`) aren't split under headers. The listing printed on exit has both.
 - **If the terminal is left blank or prints numbers when you click** (only happens if `dls` is killed with `kill -9`), restore it with `reset` or with:
 
   ```bash
@@ -153,22 +153,27 @@ No program running *inside* a terminal can start a drag: while the button is hel
 
 [dragon](https://github.com/mwh/dragon) and [ripdrag](https://github.com/nik012003/ripdrag) solve the same problem differently: you pass them file names and they open a small window to drag from. They work on Wayland and in any terminal, so use them if `dls` doesn't run on your setup.
 
-| | `dls` | dragon / ripdrag |
-|---|---|---|
-| Where you drag from | the listing itself | a separate window |
-| Picking files | mouse: click, Shift/Ctrl, drag over names | type the names (or a glob) |
-| Session | X11 only | X11 and Wayland |
-| Terminal | gnome-terminal (VTE) | any |
+On [kitty](https://sw.kovidgoyal.net/kitty/) 0.47+, [`kitten dnd file`](https://sw.kovidgoyal.net/kitty/kittens/dnd/) lets you drag that file straight out of the kitty window, with no extra window, even over SSH.
+
+| | `dls` | dragon / ripdrag | `kitten dnd` |
+|---|---|---|---|
+| Where you drag from | the listing itself | a separate window | the kitty window |
+| Picking files | mouse: click, Shift/Ctrl, drag over names | type the names (or a glob) | type the names (or a glob) |
+| Session | X11 only | X11 and Wayland | X11, Wayland and macOS |
+| Terminal | gnome-terminal (VTE) | any | kitty 0.47+ |
 
 ## Development
 
-The project is a single executable file (`dls`) plus an automated check:
+The project is a single executable file (`dls`) plus two checks:
 
 ```bash
-python3 test_dls.py   # prints "ok"
+python3 test_dls.py   # prints "ok"; runs on CI with Python 3.8 and 3.13
+python3 test_gui.py   # prints PASS/FAIL per scenario
 ```
 
-The test covers flag parsing, the file list and its order, the column layout (checked against `ls -C`), grid calibration, terminal input reading and the help line. The graphical part was validated in a nested X server (Xephyr) with a real VTE terminal and a mouse simulated through XTest.
+`test_dls.py` covers flag parsing, the file list with its order and filters (checked against `ls`), the `-C`/`-x`/`-m` layouts (checked against `ls` at several widths), grid calibration, terminal input reading and the help line.
+
+`test_gui.py` runs `dls` in a real VTE terminal inside a nested X server (Xephyr), with the mouse and keys simulated through XTest and a window that accepts drops: highlight alignment, dragging one or several files from any column, odd names, Shift/Ctrl+click, the menu, the zoom warning, scrolling, resizing, `Ctrl+Z`/`fg` and every way out. It needs an X11 session and `sudo apt install xserver-xephyr x11-utils gir1.2-vte-2.91`.
 
 ## License
 
