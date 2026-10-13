@@ -102,13 +102,39 @@ def parse(args):
                       if hidden or not n.startswith(".")]
         else:
             files.append(os.path.abspath(p))
-    return flags, files
+    return flags, sort_like_ls(flags, files)
+
+
+def sort_like_ls(flags, files):
+    """files na ordem que o ls daria com as flags de ordenacao (-t, -S, -r...)."""
+    # so as que mudam a ordem: -l, -s, -i, -F mudariam o texto de cada linha
+    # ponytail: -lc/-lu sem -t ordenam por tempo aqui (o ls ordenaria por nome)
+    keep = []
+    for f in flags:
+        if f.startswith("--"):
+            if f.split("=")[0] in ("--sort", "--time", "--reverse", "--group-directories-first"):
+                keep.append(f)
+        else:
+            # letras antes de uma flag com argumento colado (-Itmp, -T8, -w80)
+            s = re.sub("[^tSrXvcu]", "", re.split("[ITw]", f)[0])
+            if s:
+                keep.append("-" + s)
+    if not keep:
+        return files  # ja estao na ordem por nome
+    out = []
+    for d, group in itertools.groupby(files, os.path.dirname):
+        names = [os.path.basename(f) for f in group]
+        r = subprocess.run(["ls", "-1d", "--quoting-style=literal", *keep, "--", *names],
+                           cwd=d, capture_output=True)
+        order = os.fsdecode(r.stdout).split("\n")[:-1]
+        # nome com \n quebra a contagem: fica a ordem por nome
+        out += [os.path.join(d, n) for n in (order if sorted(order) == sorted(names) else names)]
+    return out
 
 
 def render(flags, files):
     """Uma linha por arquivo, na ordem de files, com cores e formato do ls."""
-    # ponytail: -U mantem a ordem de files (alfabetica); flags de ordenacao
-    # (-t, -S) sao ignoradas. Ordenar files em python se fizer falta.
+    # -U mantem a ordem de files, que ja e a do ls (sort_like_ls)
     # com a saida capturada o ls deixa de citar e escapar nomes como faz no
     # terminal; -q e o QUOTING_STYLE devolvem isso (um "\n" no nome viraria 2 linhas)
     env = {"QUOTING_STYLE": "shell-escape", **os.environ}
@@ -225,7 +251,7 @@ def missing_requirement():
     """Por que o arraste nao funciona nesta sessao; None se funciona."""
     if os.environ.get("XDG_SESSION_TYPE") == "wayland" or os.environ.get("WAYLAND_DISPLAY"):
         # Wayland nao deixa posicionar janela nem ler o ponteiro global
-        return 'arrastar requer sessão X11 (no login: "Ubuntu on Xorg")'
+        return "arrastar requer sessão X11; no Wayland use ripdrag ou dragon"
     try:
         import gi
         gi.require_version("Gtk", "3.0")
@@ -611,7 +637,7 @@ def main():
     flags, files = parse(args)
     # saida redirecionada (dls > x, dls | less): nao ha terminal pra desenhar
     if not files or not (sys.stdin.isatty() and sys.stdout.isatty()) \
-            or not os.environ.get("DISPLAY"):
+            or not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
         return subprocess.call(["ls", "--color=auto", *args])
     problem = missing_requirement()
     if problem:

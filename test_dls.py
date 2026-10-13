@@ -30,6 +30,20 @@ with tempfile.TemporaryDirectory() as t:
     out = dls.render(["-l"], dls.parse([])[1])
     assert len(out) == 4 and not any("\n" in l for l in out), out
     assert len(dls.render(["-C"], dls.parse([])[1])) == 4  # -C nao junta linhas
+    # ordenando, o nome com \n nao some: cai na ordem por nome
+    assert len(dls.parse(["-t"])[1]) == 4
+
+# flags de ordenacao: mesma ordem do ls
+with tempfile.TemporaryDirectory() as t:
+    for n, size, mtime in (("b", 2, 0), ("a", 0, 1), ("c", 1, 2)):
+        with open(os.path.join(t, n), "w") as f:
+            f.write("x" * size)
+        os.utime(os.path.join(t, n), (mtime, mtime))
+    names = lambda *args: [os.path.basename(f) for f in dls.parse([*args, t])[1]]
+    assert names("-t") == ["c", "a", "b"]
+    assert names("-ltr") == ["b", "a", "c"]
+    assert names("--sort=size") == names("-S") == ["b", "c", "a"]
+    assert names("-Itmp") == ["a", "b", "c"]  # o t de -Itmp nao e -t
 
 # grade igual a do ls -C: mesmo numero de linhas em cada largura
 with tempfile.TemporaryDirectory() as t:
@@ -89,4 +103,9 @@ assert dls.read_input(r) == ([], b"\x1b")
 assert dls.NAV.findall(b"\x1b[A\x1b[1;5B\x1b[5~\x1b[6;2~\x1b[H\x1b[F") == [
     (b"A", b""), (b"B", b""), (b"", b"5"), (b"", b"6"), (b"H", b""), (b"F", b"")]
 assert dls.NAV.sub(b"", b"\x1b[Oq\x1b[5;2~a") == b"\x1b[Oqa"
+
+# Wayland avisa, mesmo sem XWayland (sem DISPLAY)
+os.environ.pop("DISPLAY", None)
+os.environ["WAYLAND_DISPLAY"] = "wayland-0"
+assert "X11" in dls.missing_requirement()
 print("ok")

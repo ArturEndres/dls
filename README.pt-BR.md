@@ -42,18 +42,18 @@ Terminais não deixam arrastar arquivos *para fora*. Para mandar um arquivo pelo
 - **Seleção múltipla**: arraste sobre os nomes (como selecionar texto), use Shift+clique para um intervalo ou Ctrl+clique para alternar.
 - **Indicadores visuais**: o nome sob o mouse fica destacado (translúcida com compositor, sólida sem ele, como nas demos), o cursor vira mão, a seleção aparece em vídeo invertido e o ícone do arraste mostra quantos arquivos vão junto.
 - **Abrir**: duplo clique abre com o app padrão. O clique direito mostra um menu *abrir com…* com os apps instalados para aquele tipo de arquivo.
-- **Mantém o formato do `ls`**: cores, colunas, `-l`, `-h`, `-a` e as demais flags de exibição.
+- **Mantém o formato do `ls`**: cores, colunas, `-l`, `-h`, `-a` e as demais flags de exibição, além da ordenação (`-t`, `-S`, `-r`, `--sort`…).
 - **Leve**: um único arquivo Python, sem dependências para instalar num GNOME padrão. A lista aparece em ~30 ms e a interação fica pronta em ~150 ms.
 - **Não deixa o terminal quebrado**: ao sair com `q`, ao fechar a aba ou ao receber `kill`, o terminal volta ao normal.
 
 ## Requisitos
 
 **Funciona de cara:** Ubuntu e derivados com GNOME (Zorin, Pop!_OS…) numa sessão X11, usando o gnome-terminal.
-**Não funciona:** sessão Wayland (padrão do Ubuntu 22.04+) e terminais que não usam a fonte do perfil do gnome-terminal (Konsole, xfce4-terminal, Ptyxis com fonte própria). Nesses casos o `dls` não quebra, só fica desalinhado ou vira `ls`.
+**Não funciona:** sessão Wayland (padrão do Ubuntu 22.04+) e terminais que não usam a fonte do perfil do gnome-terminal (Konsole, xfce4-terminal, Ptyxis com fonte própria). Nesses casos o `dls` não quebra, só fica desalinhado ou vira `ls`. No Wayland, veja [Alternativas](#alternativas).
 
 | | |
 |---|---|
-| Sessão | **X11** (no Ubuntu 22.04+ o padrão é Wayland: escolha *Ubuntu on Xorg* na tela de login) |
+| Sessão | **X11** (no Ubuntu 22.04/24.04 escolha *Ubuntu on Xorg* na tela de login; o Ubuntu 25.10+ não traz mais sessão GNOME em X11) |
 | Terminal | **gnome-terminal** (ou outro baseado em VTE que use a fonte do perfil do gnome-terminal) |
 | Python | 3.8+ |
 | Bibliotecas | PyGObject, pycairo, GTK 3 |
@@ -140,7 +140,7 @@ Nenhum programa rodando *dentro* de um terminal consegue iniciar um arraste: enq
 
 - **Só X11.** No Wayland, uma janela não pode se posicionar em coordenadas absolutas nem consultar a posição global do ponteiro. Numa sessão Wayland o `dls` avisa e funciona como `ls`.
 - **Zoom do terminal** (`Ctrl +` / `Ctrl -`) ou um perfil diferente do padrão desalinham o destaque, porque a medida vem da fonte do perfil padrão. O `dls` percebe e mostra um aviso no lugar da linha de ajuda.
-- **Ordenação:** a lista sai sempre em ordem alfabética. Flags como `-t` e `-S` são ignoradas.
+- **Ordenação:** `-U`/`-f` mantêm a ordem por nome em vez da ordem do diretório, e `-lc`/`-lu` sem `-t` ordenam por tempo (o `ls` ordenaria por nome).
 - **Flags com argumento separado** (`-I padrão`, `-w 80`) são repassadas ao `ls`, mas o argumento não entra na lista de arrastáveis. Já os arquivos ocultados por `-I` ainda aparecem para arrastar.
 - **Enquanto aberto**, o `-l` não mostra a linha `total` e várias pastas não ficam separadas por cabeçalhos. A lista impressa ao sair tem os dois.
 - **Se o terminal ficar em branco ou imprimindo números ao clicar** (só acontece se o `dls` for morto com `kill -9`), restaure com `reset` ou com:
@@ -148,6 +148,17 @@ Nenhum programa rodando *dentro* de um terminal consegue iniciar um arraste: enq
   ```bash
   printf '\e[?1003l\e[?1006l\e[?1004l\e[?7h\e[?25h\e[?1049l'
   ```
+
+## Alternativas
+
+O [dragon](https://github.com/mwh/dragon) e o [ripdrag](https://github.com/nik012003/ripdrag) resolvem o mesmo problema de outro jeito: você passa os nomes dos arquivos e eles abrem uma janelinha de onde arrastar. Funcionam no Wayland e em qualquer terminal; use um deles se o `dls` não roda no seu ambiente.
+
+| | `dls` | dragon / ripdrag |
+|---|---|---|
+| De onde arrasta | da própria listagem | de uma janela separada |
+| Como escolhe os arquivos | mouse: clique, Shift/Ctrl, arrastar sobre os nomes | digitando os nomes (ou um glob) |
+| Sessão | só X11 | X11 e Wayland |
+| Terminal | gnome-terminal (VTE) | qualquer um |
 
 ## Desenvolvimento
 

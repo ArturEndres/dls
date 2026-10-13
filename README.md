@@ -42,18 +42,18 @@ Terminals don't let you drag files *out*. To send a file through the browser, so
 - **Multi-select**: drag over the names (like selecting text), Shift+click for a range, Ctrl+click to toggle.
 - **Visual cues**: the name under the mouse is highlighted (translucent with a compositor, solid without one, as in the demos), the cursor turns into a hand, the selection is shown in reverse video and the drag icon shows how many files are coming along.
 - **Open**: double-click opens with the default app. Right-click shows an *open with…* menu listing the apps installed for that file type.
-- **Keeps the `ls` look**: colors, columns, `-l`, `-h`, `-a` and the other display flags.
+- **Keeps the `ls` look**: colors, columns, `-l`, `-h`, `-a` and the other display flags, plus the sort order (`-t`, `-S`, `-r`, `--sort`…).
 - **Lightweight**: a single Python file, nothing to install on a standard GNOME desktop. The listing shows up in ~30 ms and interaction is ready in ~150 ms.
 - **Never leaves the terminal broken**: quitting with `q`, closing the tab or receiving `kill` all restore the terminal.
 
 ## Requirements
 
 **Works out of the box:** Ubuntu and GNOME-based derivatives (Zorin, Pop!_OS…) on an X11 session, using gnome-terminal.
-**Doesn't work:** Wayland sessions (the Ubuntu 22.04+ default) and terminals that don't use the gnome-terminal profile font (Konsole, xfce4-terminal, Ptyxis with its own font). In those cases `dls` doesn't break: it's just misaligned or falls back to `ls`.
+**Doesn't work:** Wayland sessions (the Ubuntu 22.04+ default) and terminals that don't use the gnome-terminal profile font (Konsole, xfce4-terminal, Ptyxis with its own font). In those cases `dls` doesn't break: it's just misaligned or falls back to `ls`. On Wayland, see [Alternatives](#alternatives).
 
 | | |
 |---|---|
-| Session | **X11** (Ubuntu 22.04+ defaults to Wayland: pick *Ubuntu on Xorg* on the login screen) |
+| Session | **X11** (on Ubuntu 22.04/24.04 pick *Ubuntu on Xorg* on the login screen; Ubuntu 25.10+ no longer ships an X11 GNOME session) |
 | Terminal | **gnome-terminal** (or another VTE-based terminal using the gnome-terminal profile font) |
 | Python | 3.8+ |
 | Libraries | PyGObject, pycairo, GTK 3 |
@@ -140,7 +140,7 @@ No program running *inside* a terminal can start a drag: while the button is hel
 
 - **X11 only.** On Wayland, a window can't place itself at absolute coordinates or read the global pointer position. On a Wayland session `dls` warns and behaves like `ls`.
 - **Terminal zoom** (`Ctrl +` / `Ctrl -`) or a non-default profile misaligns the highlight, since the measurement comes from the default profile font. `dls` notices it and shows a warning in place of the help line.
-- **Sorting:** the listing is always alphabetical. Flags like `-t` and `-S` are ignored.
+- **Sorting:** `-U`/`-f` keep name order instead of directory order, and `-lc`/`-lu` without `-t` sort by time (`ls` would sort by name).
 - **Flags with a separate argument** (`-I pattern`, `-w 80`) are passed to `ls`, but the argument isn't treated as a draggable file. Files hidden by `-I` still show up as draggable.
 - **While open**, `-l` doesn't show the `total` line and several folders aren't split under headers. The listing printed on exit has both.
 - **If the terminal is left blank or prints numbers when you click** (only happens if `dls` is killed with `kill -9`), restore it with `reset` or with:
@@ -148,6 +148,17 @@ No program running *inside* a terminal can start a drag: while the button is hel
   ```bash
   printf '\e[?1003l\e[?1006l\e[?1004l\e[?7h\e[?25h\e[?1049l'
   ```
+
+## Alternatives
+
+[dragon](https://github.com/mwh/dragon) and [ripdrag](https://github.com/nik012003/ripdrag) solve the same problem differently: you pass them file names and they open a small window to drag from. They work on Wayland and in any terminal, so use them if `dls` doesn't run on your setup.
+
+| | `dls` | dragon / ripdrag |
+|---|---|---|
+| Where you drag from | the listing itself | a separate window |
+| Picking files | mouse: click, Shift/Ctrl, drag over names | type the names (or a glob) |
+| Session | X11 only | X11 and Wayland |
+| Terminal | gnome-terminal (VTE) | any |
 
 ## Development
 
